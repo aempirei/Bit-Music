@@ -1,0 +1,171 @@
+Bit Music | Analysis of 1-liner C music
+
+Copyright(c) 2011 by Christopher Abad
+20 GOTO 10 | aempirei@gmail.com
+
+This project was inspired by two youtube videos:
+
+	"Experimental one-line algorithmic music - the 2nd iteration"
+	http://www.youtube.com/watch?v=qlrs2Vorw2Y
+
+	"Experimental music from very short C programs"
+	http://www.youtube.com/watch?v=GtQdIYUtAHg
+
+The musical generation of the 1-liner C program is of the form:
+
+	unsigned char transform(unsigned long t);
+
+	for(t = 0; t < (1 << N); t++) {
+		putchar(transform(t));
+	}
+
+This also assumes tha output is used to feed a PCM audio device at 8000hz 8-bit mono.
+
+This process can alternatively be described in many ways. It would first be useful to look at the loop iterator (t) in a specific
+novel way.  What at first appears to be a simple monotonically increasing sequence may prove to be more useful when written as
+a set of binary vectors {b_n} each representing a single-bit slice of (t) over the entire sequence of iterations.
+
+	  t  =  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15 ... 2^N-1
+	     +-------------------------------------------------------------------------
+	b_0  |  0   1   0   1   0   1   0   1   0   1   0   1   0   1   0   1 ...   1
+	     +-------------------------------------------------------------------------
+	b_1  |  0   0   1   1   0   0   1   1   0   0   1   1   0   0   1   1 ...   1
+	     +-------------------------------------------------------------------------
+	b_2  |  0   0   0   0   1   1   1   1   0   0   0   0   1   1   1   1 ...   1
+	     +-------------------------------------------------------------------------
+	b_n  |  0 x (2^n) ...   1 x (2^n) ...                                       1
+	     +-------------------------------------------------------------------------
+
+Taken independantly, each bit as an indepedant sequence is a square wave. Furthermore, each subsequent period is halving, and
+is incidentally orthagonal when taken as an entire set. These features readily form a very useful linear algebraic basis.
+
+The signal frequency series is (don't forget nyquist):
+
+	f_n = frequency(b_n) (hz)
+	f_n = 8000 / 2^(n+1) (hz)
+	f_n = { 4000, 2000, 1000, 500, 250, 125, 62.5, 31.25, 15.625, ... } . (hz)
+
+After about f_9, it is useful to consider the period of the vector.
+
+	p_n = 1 / f_n (s)
+	p_n = { ..., 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192, 16.384, ... } . (s)
+
+To select a tone and duration, it is simply a matter of selecting the corresponding bit vectors and composing the two in some manner.
+Selction is via an AND mask.
+
+To select the 1000hz tone at bit vector b_2, calculate function b_2(t) = (t>>2)&1
+To select a note duration of approximately 1/4th second we calculate:
+
+       2^(n+1) = 8000 * 1/4
+   n+1 log_2 2 = log_2 2000
+           n+1 = log_2 2000
+             n = log_2 2000 - 1
+             n ~ 11 - 1 ~ 10
+
+Then we select b_10 and calculate function b_10(t) = (t>>10)&1
+
+An entire b_n vector could be composed by b_n = { b_n(0), ..., b_n(N-1) }
+
+Now, the signals can be composed by simple binary amplitude modulation (AM) using either multiplication operation (*) or the bitwise AND (&)
+operation (provided that the bits are correctly aligned of course). We did happen to align them correctly above. This correct bitwise alignment
+could be done via normal matrix row-swap operations on the binary vector (t) instead of the bitwise shift operation (>>). Additionally, we
+should select a volume level. Assuming the output is unsigned 8-bit, we can simply shift the modulated signal by up to 7 positions to the left.
+
+So we get the final signal generation function:
+
+	b_2_t = (t>>2) & 1   // select tone signal
+	b_10_t = (t>>10) & 1 // select duration signal
+	o = b_10_t & b_2_t   // modulate duration signal by tone signal
+	o <<= 6              // select volume
+
+Reduction of the above produces this compact form:
+
+	o = ( (t >> 2) & (t >> 10) & 1 ) << 6
+
+Further reduction:
+
+	o = (t << 4) & (t >> 4) & 64
+
+The same process can be described as a dot-product operation with (s), the selection vector, operating on (t) as s.t,
+and then another dot-product operation (c), the composition vector, also operating on (t) as c.t, and then finally the
+volume scalar (v), so that the complete modulation is v(s.t)(c.t).
+
+At this point, this becomes an interesting point of study for Kolmogorov complexity and the computation of music.
+
+Just given about 9 tones and 8 time intervals, it would be easy to sequence somewhat novel audio scores, but we're going to continue
+the breakdown of this basis to improve upon these numeric tools.
+
+Given that the initial basis {b_n} is orthagonal, but of row rank significantly lower than its column rank, it would be of moderate interest
+to see if a complete linear independant orthagonal basis of rank 2^N could be generated from the original basis in some simple way. Given this,
+then in an albiet rather trival manner, any sequence of length 2^N could be managed in a rather long "1-liner". But then provided sufficient
+knowledge in the theory of data compression, an optimization between a minimal vector subset and a maximal signal approximation could be reached
+using only the most basic of algebraic operations.
+
+Construction of a complete orthagonal basis of rank 2^N inituitively can be imagined to be by time-scaling of any of the original basis. One
+additional fact to remember is that each of the square-waves are self-similar and only differ in their time-scale. Also, provided that the total
+time interval of a complete sequence aligns on the period boundary of every basis vector, then the complete basis will retain orthagonality.
+So only a single representative vector from the basis is needed to generate an entire basis of rank 2^N provided a simple time-scaling function
+can be determined. Firstly, selection of the basis vector with minimal period is simply:
+
+	b_0(t) = (t & 1)
+
+To scale a function in range by a constant factor of (k) would be k*f(n), while to scale a function in domain by the same factor would be f(n/k).
+So then it should follow that the period of the basis vector b_0 can be expanded simply by b_0(t/(k+1)) = (floor(t/(k+1)) & 1). The original b_0 square
+wave is an odd function, analogous to the sine function, so therefore given k = { 0, ..., 2^N-1 } then the complete basis can be generated by:
+
+	b'_k = { b_0(2 * t / (k + 1)) } = { floor(2 * t / (k + 1)) & 1 }
+
+With the frequency of each basis vector:
+
+	f'_k = frequency(b'_k) (hz)
+	f'_k = (8000/k) mod 8000 (hz)
+	f'_k = { 0, 4000, 2666, 2000, 1600, 1333, 1142, 888, 800, 727, 666, ... } . (hz)
+
+This is the square-wave analog to the discrete sine transform (DST) basis. We will call it the swDST with inverse matrix swDSTi.
+If we wanted to construct a target signal x = {x_t} from the swDST basis, the standard way is to solve for y = {y_k} by using the
+inverse matrix. If (swDST)y = x then y = (swDSTi)x. Since swDST is orthagonal, the vector y = {y_k} can be calculated for any
+arbitrary axis:
+
+	y_k = x . (b'_k) / |b'_k|
+
+*note: sometimes it may be required to balance the square-waves about [-1,1] instead of [0,1]
+
+From here, given a target signal x = {x_t} and the coefficients y = {y_k} describing x in terms of the swDST basis, the original signal
+can be reconstructed via:
+
+	// assuming unsigned long y[1 << N] = { ... } is assigned with the calculated coefficients from y=(swDSTi)x
+	// using the dot-product method given the fact that the basis is orthagonal.
+
+	for(t = 0; t < (1 << N); t++) {
+
+		unsigned char x_t = 0;
+
+		for(k = 0; k < (1 << N); k++)
+			x_t += y[k] * swDST[t][k];
+
+		putchar(x_t);
+	}
+
+Trying to revise the original modulation scheme with a target frequency of 2600hz, we get the following:
+
+	k = 8000/2600 ~ 3.08
+	b'_3.08 = b_0(2*t/(3.08+1)) = floor(2*t/(3.08+1))&1 = floor(t*2/4.08)&1 // select tone
+	b_10_t = (t>>10) & 1 // select duration signal
+	o = b_10_t & b'3.08  // modulate duration signal by tone signal
+	o <<= 6              // select volume
+
+Reduction of the above produces this compact form:
+
+	o = ( ((t>>10)&1) & (((int)floor(t*2.0/4.08))&1) ) << 6
+
+Given a number of output signals o = {o_k}, these signals can then be composed together with a few possible
+methods, namely binary XOR (^), binary OR (|) and arithmetic addition (+), each with various auditory effects.
+Namely, addition runs the risk of clipping as the mean signal power approaches the range limit of the output
+channel (in this case 8-bit or 255), OR may saturate all of the output bits if the signal becomes too complex,
+and XOR may cancel out common-mode signals of similar power.
+
+	o' =  o_0 + o_1 + ... + O_n
+	o' =  o_0 ^ o_1 ^ ... ^ O_n
+	o' =  o_0 | o_1 | ... | O_n
+
+More shit to come, obviously.
