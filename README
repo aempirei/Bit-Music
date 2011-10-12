@@ -121,30 +121,11 @@ With the frequency of each basis vector:
 	f'_k = (8000/k) mod 8000 (hz)
 	f'_k = { 0, 4000, 2666, 2000, 1600, 1333, 1142, 888, 800, 727, 666, ... } . (hz)
 
-This is the square-wave analog to the discrete sine transform (DST) basis. We will call it the swDST with inverse matrix swDSTi.
-If we wanted to construct a target signal x = {x_t} from the swDST basis, the standard way is to solve for y = {y_k} by using the
-inverse matrix. If (swDST)y = x then y = (swDSTi)x. Since swDST is orthagonal, the vector y = {y_k} can be calculated for any
-arbitrary axis:
-
-	y_k = x . (b'_k) / |b'_k|
-
-*note: sometimes it may be required to balance the square-waves about [-1,1] instead of [0,1]
-
-From here, given a target signal x = {x_t} and the coefficients y = {y_k} describing x in terms of the swDST basis, the original signal
-can be reconstructed via:
-
-	// assuming unsigned long y[1 << N] = { ... } is assigned with the calculated coefficients from y=(swDSTi)x
-	// using the dot-product method given the fact that the basis is orthagonal.
-
-	for(t = 0; t < (1 << N); t++) {
-
-		unsigned char x_t = 0;
-
-		for(k = 0; k < (1 << N); k++)
-			x_t += y[k] * swDST[t][k];
-
-		putchar(x_t);
-	}
+Unfortunately, unlike the DST, the discrete implementations of this basis are not orthagonal because of aliasing problems at period boundaries
+of many of the square waves.  When the wave frequency does not divide the number of discrete samples in the signal, then an imbalance in the
+distribution of the high and low states of the signal. Even tho this does not mean the basis is not linear independant, the basis loses some of
+the simplicities in decomposition calculations. Orthagonalization of this basis can be performed at the cost of significant complexity. A famous
+compromise between the hilbert square-wave basis and the advantages of orthagonality is the "Haar Wavelet".
 
 Trying to revise the original modulation scheme with a target frequency of 2600hz, we get the following:
 
@@ -153,6 +134,9 @@ Trying to revise the original modulation scheme with a target frequency of 2600h
 	b_10_t = (t>>10) & 1 // select duration signal
 	o = b_10_t & b'3.08  // modulate duration signal by tone signal
 	o <<= 6              // select volume
+
+One may notice that when a frequency that is significantly misaligned with the total signal period is selected, many artifacts arise
+in the output signal.
 
 Reduction of the above produces this compact form:
 
